@@ -28,7 +28,7 @@ export default function Home() {
     if (!text || loading) return;
 
     setMessages((prev) => [...prev, { role: 'user', text }]);
-    setInput('');
+    setInput(''); // 送出後立刻清空輸入框
     setLoading(true);
     setError('');
 
@@ -52,7 +52,9 @@ export default function Home() {
   }
 
   function handleKeyDown(e) {
-    if (e.key === 'Enter' && !e.shiftKey) {
+    // 中文/日文等輸入法選字時也會觸發 Enter，這時 isComposing 是 true，
+    // 不能當成「送出」，不然字會被攔腰送出、殘留在框裡
+    if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
       e.preventDefault();
       handleSubmit(e);
     }
