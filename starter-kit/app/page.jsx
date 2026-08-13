@@ -11,6 +11,10 @@ import { useState, useRef, useEffect } from 'react';
 const APP_TITLE = '我的第一個 AI 應用';
 const PLACEHOLDER = '輸入訊息⋯⋯';
 
+// 對話紀錄存在瀏覽器的 localStorage 裡（只在這一台裝置、這個瀏覽器看得到）
+// 換瀏覽器、換裝置、清瀏覽器資料都會不見 —— 這不是雲端資料庫，是本機記憶
+const STORAGE_KEY = 'chat-history-v1';
+
 export default function Home() {
   // 輸入框改用 ref 直接控制（uncontrolled），不用 React state 綁 value。
   // 原因：中文/日文輸入法有自己的「組字緩衝區」，如果 value 是被 React state
@@ -21,8 +25,42 @@ export default function Home() {
   const [messages, setMessages] = useState([]); // { role: 'user' | 'ai', text }
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [loaded, setLoaded] = useState(false); // 避免存檔動作蓋掉還沒讀取完成的舊紀錄
   const bottomRef = useRef(null);
   const textareaRef = useRef(null);
+
+  // 網頁一打開，先從 localStorage 把上次的對話紀錄讀回來
+  useEffect(() => {
+    try {
+      const saved = window.localStorage.getItem(STORAGE_KEY);
+      if (saved) setMessages(JSON.parse(saved));
+    } catch (err) {
+      // 讀取失敗（例如資料格式壞掉）就當作沒有紀錄，不擋住網頁使用
+      console.error('讀取對話紀錄失敗：', err);
+    } finally {
+      setLoaded(true);
+    }
+  }, []);
+
+  // 每次對話紀錄變動，就同步寫回 localStorage
+  useEffect(() => {
+    if (!loaded) return; // 還沒讀取完成之前不要寫，避免用空陣列蓋掉舊紀錄
+    try {
+      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(messages));
+    } catch (err) {
+      console.error('儲存對話紀錄失敗：', err);
+    }
+  }, [messages, loaded]);
+
+  function handleClearHistory() {
+    if (!window.confirm('確定要清除所有對話紀錄嗎？這個動作沒辦法復原。')) return;
+    setMessages([]);
+    try {
+      window.localStorage.removeItem(STORAGE_KEY);
+    } catch (err) {
+      console.error('清除對話紀錄失敗：', err);
+    }
+  }
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -83,10 +121,18 @@ export default function Home() {
     <main style={S.page}>
       <header style={S.header}>
         <div style={S.headerAvatar}>AI</div>
-        <div>
+        <div style={S.headerText}>
           <div style={S.headerTitle}>{APP_TITLE}</div>
           <div style={S.headerStatus}>{loading ? '正在輸入⋯⋯' : '線上'}</div>
         </div>
+        <button
+          type="button"
+          onClick={handleClearHistory}
+          style={S.clearButton}
+          title="清除所有對話紀錄"
+        >
+          清除紀錄
+        </button>
       </header>
 
       <section style={S.chatArea}>
@@ -194,6 +240,18 @@ const S = {
   },
   headerTitle: { fontWeight: 700, fontSize: '1.05rem' },
   headerStatus: { fontSize: '0.78rem', opacity: 0.85 },
+  headerText: { flex: 1, minWidth: 0 },
+  clearButton: {
+    flexShrink: 0,
+    padding: '0.4rem 0.8rem',
+    fontSize: '0.8rem',
+    fontWeight: 600,
+    color: '#fff',
+    background: 'rgba(255,255,255,0.2)',
+    border: '1px solid rgba(255,255,255,0.4)',
+    borderRadius: 14,
+    cursor: 'pointer',
+  },
   chatArea: {
     flex: 1,
     overflowY: 'auto',
