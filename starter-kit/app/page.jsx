@@ -1,9 +1,10 @@
 'use client';
 
-// 這是你的網站首頁 —— LINE 風格聊天介面 + 登入功能
+// 這是你的網站首頁 —— LINE 風格聊天介面 + username 識別
 //
-// 對話紀錄現在存在 Supabase（雲端資料庫），不是瀏覽器本機了：
-// 換裝置、換瀏覽器，只要用同一個 email 登入，就看得到同一份紀錄。
+// ⚠️ 這不是真正的登入系統：沒有密碼，只是用你打的 username 當「你是誰」的標籤。
+// 只要有人知道你的 username，就能看到同一份對話紀錄 —— 這是刻意的取捨，
+// 換來的是不用處理帳號、密碼、驗證信這些複雜的東西。
 //
 // 改法：把這整個檔案貼給 Codex，跟它說你要做什麼（見 repo 根目錄的 SPEC-TEMPLATE.md）
 
@@ -15,104 +16,95 @@ import { supabase } from './lib/supabaseClient';
 const APP_TITLE = '我的第一個 AI 應用';
 const PLACEHOLDER = '輸入訊息⋯⋯';
 
+// username 存在這個瀏覽器的 localStorage 裡，下次打開網站不用再打一次
+const USERNAME_KEY = 'chat-username';
+
 export default function Home() {
-  // session 是 undefined 代表「還在檢查有沒有登入過」，避免畫面閃一下登入頁又閃回聊天室
-  const [session, setSession] = useState(undefined);
+  // undefined 代表「還在檢查瀏覽器裡有沒有存過 username」
+  const [username, setUsername] = useState(undefined);
 
-  // 網頁一打開，先問 Supabase「這個瀏覽器有沒有登入紀錄」
-  // 之後只要登入狀態改變（登入、登出、magic link 生效），這裡都會被通知
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => setSession(data.session));
-
-    const { data: listener } = supabase.auth.onAuthStateChange((_event, newSession) => {
-      setSession(newSession);
-    });
-
-    return () => listener.subscription.unsubscribe();
+    try {
+      const saved = window.localStorage.getItem(USERNAME_KEY);
+      setUsername(saved || null);
+    } catch (err) {
+      setUsername(null);
+    }
   }, []);
 
-  if (session === undefined) {
+  function handleLogin(name) {
+    try {
+      window.localStorage.setItem(USERNAME_KEY, name);
+    } catch (err) {
+      console.error('儲存 username 失敗：', err);
+    }
+    setUsername(name);
+  }
+
+  function handleSwitchUser() {
+    try {
+      window.localStorage.removeItem(USERNAME_KEY);
+    } catch (err) {
+      console.error('清除 username 失敗：', err);
+    }
+    setUsername(null);
+  }
+
+  if (username === undefined) {
     return (
       <main style={S.page}>
-        <div style={S.centerBox}>檢查登入狀態⋯⋯</div>
+        <div style={S.centerBox}>載入中⋯⋯</div>
       </main>
     );
   }
 
-  if (!session) {
-    return <LoginScreen />;
+  if (!username) {
+    return <UsernameScreen onLogin={handleLogin} />;
   }
 
-  return <ChatScreen session={session} />;
+  return <ChatScreen username={username} onSwitchUser={handleSwitchUser} />;
 }
 
-// ============ 還沒登入時看到的畫面 ============
-function LoginScreen() {
-  const [email, setEmail] = useState('');
-  const [sent, setSent] = useState(false);
-  const [sending, setSending] = useState(false);
-  const [error, setError] = useState('');
+// ============ 還沒輸入 username 時看到的畫面 ============
+function UsernameScreen({ onLogin }) {
+  const [value, setValue] = useState('');
 
-  async function handleSendLink(e) {
+  function handleSubmit(e) {
     e.preventDefault();
-    const value = email.trim();
-    if (!value || sending) return;
-
-    setSending(true);
-    setError('');
-    try {
-      // Supabase 會寄一封信到這個 email，裡面有一個登入連結，
-      // 使用者點下去就會自動登入（不用設密碼）
-      const { error: signInError } = await supabase.auth.signInWithOtp({ email: value });
-      if (signInError) throw signInError;
-      setSent(true);
-    } catch (err) {
-      setError(`寄送失敗：${err.message}`);
-    } finally {
-      setSending(false);
-    }
+    const name = value.trim();
+    if (!name) return;
+    onLogin(name);
   }
 
   return (
     <main style={S.page}>
       <div style={S.loginBox}>
         <div style={S.loginTitle}>{APP_TITLE}</div>
-        <p style={S.loginSub}>登入後，你的對話紀錄會存在雲端，換裝置也看得到。</p>
-
-        {sent ? (
-          <div style={S.loginSentBox}>
-            信寄出去了！打開 <strong>{email}</strong> 的信箱，點裡面的連結就會自動登入。
-            <div style={{ marginTop: 8, fontSize: '0.85rem', color: '#888' }}>
-              沒收到信？記得看一下垃圾郵件匣。
-            </div>
-          </div>
-        ) : (
-          <form onSubmit={handleSendLink} style={{ width: '100%' }}>
-            <input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="你的 email"
-              required
-              style={S.loginInput}
-            />
-            <button type="submit" disabled={sending} style={S.loginButton}>
-              {sending ? '寄送中⋯⋯' : '寄送登入連結'}
-            </button>
-          </form>
-        )}
-
-        {error && <div style={S.loginError}>{error}</div>}
+        <p style={S.loginSub}>
+          取一個名字，換裝置時打同一個名字，就能看到同一份對話紀錄。
+          <br />
+          ⚠️ 這不是密碼 —— 別人知道你的名字也看得到。
+        </p>
+        <form onSubmit={handleSubmit} style={{ width: '100%' }}>
+          <input
+            type="text"
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            placeholder="取個名字，例如 jasper123"
+            required
+            style={S.loginInput}
+          />
+          <button type="submit" style={S.loginButton}>
+            進入聊天室
+          </button>
+        </form>
       </div>
     </main>
   );
 }
 
-// ============ 登入後看到的聊天畫面 ============
-function ChatScreen({ session }) {
-  const userId = session.user.id;
-  const userEmail = session.user.email;
-
+// ============ 聊天畫面 ============
+function ChatScreen({ username, onSwitchUser }) {
   const [hasText, setHasText] = useState(false);
   const [messages, setMessages] = useState([]); // { id, role: 'user' | 'ai', text }
   const [loading, setLoading] = useState(false);
@@ -121,7 +113,7 @@ function ChatScreen({ session }) {
   const bottomRef = useRef(null);
   const textareaRef = useRef(null);
 
-  // 登入後，去 Supabase 把這個使用者之前的對話紀錄讀回來
+  // 進來之後，去 Supabase 把這個 username 之前的對話紀錄讀回來
   useEffect(() => {
     let cancelled = false;
 
@@ -130,7 +122,7 @@ function ChatScreen({ session }) {
       const { data, error: loadError } = await supabase
         .from('messages')
         .select('id, role, content, created_at')
-        .eq('user_id', userId)
+        .eq('username', username)
         .order('created_at', { ascending: true });
 
       if (cancelled) return;
@@ -148,17 +140,16 @@ function ChatScreen({ session }) {
     return () => {
       cancelled = true;
     };
-  }, [userId]);
+  }, [username]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, loading]);
 
-  // 把一則訊息寫進 Supabase（使用者的話跟 AI 的回覆都會呼叫這個）
   async function saveMessage(role, text) {
     const { data, error: insertError } = await supabase
       .from('messages')
-      .insert({ user_id: userId, role, content: text })
+      .insert({ username, role, content: text })
       .select('id')
       .single();
 
@@ -176,7 +167,6 @@ function ChatScreen({ session }) {
     const text = (el?.value ?? '').trim();
     if (!text || loading) return;
 
-    // 先讓使用者的訊息立刻出現在畫面上，不用等資料庫寫完才顯示
     const tempId = `temp-${Date.now()}`;
     setMessages((prev) => [...prev, { id: tempId, role: 'user', text }]);
 
@@ -188,15 +178,12 @@ function ChatScreen({ session }) {
     setLoading(true);
     setError('');
 
-    // 同步把使用者的訊息存進 Supabase
     saveMessage('user', text);
 
     try {
       const res = await fetch('/api/ai', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        // 把「這次新打的話」跟「目前為止的對話紀錄」一起送給後端，
-        // AI 才會記得之前聊過什麼，而不是每次都當成全新的對話
         body: JSON.stringify({
           input: text,
           history: messages.map((m) => ({ role: m.role, text: m.text })),
@@ -218,8 +205,6 @@ function ChatScreen({ session }) {
   }
 
   function handleKeyDown(e) {
-    // 中文/日文等輸入法選字時也會觸發 Enter，這時 isComposing 是 true，
-    // 不能當成「送出」，不然字會被攔腰送出、殘留在框裡
     if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
       e.preventDefault();
       handleSubmit(e);
@@ -232,16 +217,12 @@ function ChatScreen({ session }) {
 
   async function handleClearHistory() {
     if (!window.confirm('確定要清除所有對話紀錄嗎？這個動作沒辦法復原。')) return;
-    const { error: deleteError } = await supabase.from('messages').delete().eq('user_id', userId);
+    const { error: deleteError } = await supabase.from('messages').delete().eq('username', username);
     if (deleteError) {
       setError(`清除失敗：${deleteError.message}`);
       return;
     }
     setMessages([]);
-  }
-
-  async function handleLogout() {
-    await supabase.auth.signOut();
   }
 
   return (
@@ -250,15 +231,13 @@ function ChatScreen({ session }) {
         <div style={S.headerAvatar}>AI</div>
         <div style={S.headerText}>
           <div style={S.headerTitle}>{APP_TITLE}</div>
-          <div style={S.headerStatus}>
-            {loading ? '正在輸入⋯⋯' : userEmail}
-          </div>
+          <div style={S.headerStatus}>{loading ? '正在輸入⋯⋯' : username}</div>
         </div>
         <button type="button" onClick={handleClearHistory} style={S.clearButton} title="清除所有對話紀錄">
           清除紀錄
         </button>
-        <button type="button" onClick={handleLogout} style={S.logoutButton} title="登出">
-          登出
+        <button type="button" onClick={onSwitchUser} style={S.logoutButton} title="切換使用者">
+          切換
         </button>
       </header>
 
@@ -329,7 +308,7 @@ function ChatScreen({ session }) {
 
 // 樣式集中放這裡，改配色只改這一塊
 const LINE_GREEN = '#06C755';
-const BG = '#8DB5A6'; // LINE 聊天室背景那種淡綠灰
+const BG = '#8DB5A6';
 
 const S = {
   page: {
@@ -341,11 +320,7 @@ const S = {
     fontFamily: 'system-ui, -apple-system, "Noto Sans TC", sans-serif',
     background: BG,
   },
-  centerBox: {
-    margin: 'auto',
-    color: '#fff',
-    fontSize: '0.95rem',
-  },
+  centerBox: { margin: 'auto', color: '#fff', fontSize: '0.95rem' },
   loginBox: {
     margin: 'auto',
     width: '100%',
@@ -361,7 +336,7 @@ const S = {
     gap: 4,
   },
   loginTitle: { fontSize: '1.2rem', fontWeight: 700, marginBottom: 4 },
-  loginSub: { fontSize: '0.88rem', color: '#666', marginBottom: '1rem', lineHeight: 1.6 },
+  loginSub: { fontSize: '0.85rem', color: '#666', marginBottom: '1rem', lineHeight: 1.6 },
   loginInput: {
     width: '100%',
     padding: '0.7rem 1rem',
@@ -382,20 +357,6 @@ const S = {
     border: 'none',
     borderRadius: 10,
     cursor: 'pointer',
-  },
-  loginSentBox: {
-    fontSize: '0.92rem',
-    lineHeight: 1.7,
-    color: '#333',
-    background: '#f3fbf5',
-    border: '1px solid #cdeed6',
-    borderRadius: 10,
-    padding: '1rem',
-  },
-  loginError: {
-    marginTop: '0.8rem',
-    fontSize: '0.85rem',
-    color: '#c0392b',
   },
   header: {
     display: 'flex',
@@ -458,16 +419,8 @@ const S = {
     flexDirection: 'column',
     gap: 10,
   },
-  emptyState: {
-    margin: 'auto',
-    color: 'rgba(255,255,255,0.85)',
-    fontSize: '0.95rem',
-  },
-  bubbleRow: {
-    display: 'flex',
-    alignItems: 'flex-end',
-    gap: 6,
-  },
+  emptyState: { margin: 'auto', color: 'rgba(255,255,255,0.85)', fontSize: '0.95rem' },
+  bubbleRow: { display: 'flex', alignItems: 'flex-end', gap: 6 },
   avatar: {
     width: 28,
     height: 28,
@@ -503,11 +456,7 @@ const S = {
     whiteSpace: 'pre-wrap',
     boxShadow: '0 1px 1px rgba(0,0,0,0.08)',
   },
-  typingDot: {
-    animation: 'blink 1.4s infinite both',
-    fontSize: '1.2rem',
-    lineHeight: '0.5rem',
-  },
+  typingDot: { animation: 'blink 1.4s infinite both', fontSize: '1.2rem', lineHeight: '0.5rem' },
   error: {
     alignSelf: 'center',
     padding: '0.6rem 1rem',
