@@ -88,7 +88,9 @@ export default function Home() {
       const res = await fetch('/api/ai', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ input: text }),
+        // 把「這次新打的話」跟「目前為止的對話紀錄」一起送給後端，
+        // AI 才會記得之前聊過什麼，而不是每次都當成全新的對話
+        body: JSON.stringify({ input: text, history: messages }),
       });
       const data = await res.json();
       if (data.error) {
