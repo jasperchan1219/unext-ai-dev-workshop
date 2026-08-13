@@ -12,11 +12,17 @@ const APP_TITLE = '我的第一個 AI 應用';
 const PLACEHOLDER = '輸入訊息⋯⋯';
 
 export default function Home() {
-  const [input, setInput] = useState('');
+  // 輸入框改用 ref 直接控制（uncontrolled），不用 React state 綁 value。
+  // 原因：中文/日文輸入法有自己的「組字緩衝區」，如果 value 是被 React state
+  // 綁死的（controlled），送出當下用 setState('') 清空，
+  // 輸入法的組字緩衝區有時會在下一輪把殘留的字重新塞回框裡，蓋掉清空的結果，
+  // 造成「明明送出了，框裡卻還留著字」。改成直接操作 DOM 元素的 value 就不會有這問題。
+  const [hasText, setHasText] = useState(false);
   const [messages, setMessages] = useState([]); // { role: 'user' | 'ai', text }
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const bottomRef = useRef(null);
+  const textareaRef = useRef(null);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -24,11 +30,19 @@ export default function Home() {
 
   async function handleSubmit(e) {
     e.preventDefault();
-    const text = input.trim();
+    const el = textareaRef.current;
+    const text = (el?.value ?? '').trim();
     if (!text || loading) return;
 
     setMessages((prev) => [...prev, { role: 'user', text }]);
-    setInput(''); // 送出後立刻清空輸入框
+
+    // 直接清空 DOM 元素本身，而不是透過 state 重新 render，
+    // 這樣輸入法的組字緩衝區不會有機會把舊字塞回來
+    if (el) {
+      el.value = '';
+      el.style.height = 'auto';
+    }
+    setHasText(false);
     setLoading(true);
     setError('');
 
@@ -48,6 +62,7 @@ export default function Home() {
       setError(`送出失敗：${err.message}`);
     } finally {
       setLoading(false);
+      textareaRef.current?.focus();
     }
   }
 
@@ -58,6 +73,10 @@ export default function Home() {
       e.preventDefault();
       handleSubmit(e);
     }
+  }
+
+  function handleChange(e) {
+    setHasText(e.target.value.trim().length > 0);
   }
 
   return (
@@ -114,14 +133,15 @@ export default function Home() {
 
       <form onSubmit={handleSubmit} style={S.inputBar}>
         <textarea
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
+          ref={textareaRef}
+          defaultValue=""
+          onChange={handleChange}
           onKeyDown={handleKeyDown}
           placeholder={PLACEHOLDER}
           rows={1}
           style={S.textarea}
         />
-        <button type="submit" disabled={loading || !input.trim()} style={S.sendButton}>
+        <button type="submit" disabled={loading || !hasText} style={S.sendButton}>
           送出
         </button>
       </form>
