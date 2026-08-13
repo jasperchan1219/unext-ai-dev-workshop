@@ -8,6 +8,7 @@
 而且你不會寫一行程式。
 
 ---
+已部署的網址：https://unext-ai-dev-workshop-five.vercel.app/
 
 ## 這個 Repo 給你什麼
 
